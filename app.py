@@ -2,7 +2,6 @@ from flask import Flask, render_template, redirect, url_for, request, session, f
 from pymongo import MongoClient
 from bson import ObjectId
 
-
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
 
@@ -11,6 +10,7 @@ db = client['face_recognition']
 users_collection = db['users']
 reports_collection = db['reports']
 requests_collection = db['registration_requests']
+categories_collection = db['categories']  # New collection for categories
 
 @app.route('/')
 def home():
@@ -30,7 +30,7 @@ def login():
                 return redirect(url_for('approve_requests'))
             return redirect(url_for('report'))
         else:
-            return render_template('login.html',error='Incorrect username or password')
+            return render_template('login.html', error='Incorrect username or password')
 
     return render_template('login.html')
 
@@ -51,16 +51,19 @@ def register():
         flash('Registration request sent to superadmin for approval')
         return redirect(url_for('login'))
 
-    return render_template('register.html')
+    categories = list(categories_collection.find())  # Load categories from database
+    return render_template('register.html', categories=categories)
 
 @app.route('/approve_requests')
 def approve_requests():
     if 'username' not in session or session['role'] != 'superadmin':
         return redirect(url_for('login'))
 
-    # Get all registration requests
+    # Get all registration requests, categories, and users
     requests = list(requests_collection.find())
-    return render_template('approve_requests.html', requests=requests)
+    categories = list(categories_collection.find())
+    users = list(users_collection.find())
+    return render_template('approve_requests.html', requests=requests, categories=categories, users=users)
 
 @app.route('/approve/<request_id>', methods=['POST'])
 def approve(request_id):
@@ -86,6 +89,31 @@ def reject(request_id):
     # Reject the registration request
     requests_collection.delete_one({'_id': ObjectId(request_id)})
     flash('User rejected successfully')
+    return redirect(url_for('approve_requests'))
+
+@app.route('/add_category', methods=['POST'])
+def add_category():
+    if 'username' not in session or session['role'] != 'superadmin':
+        return redirect(url_for('login'))
+    category_name = request.form['category_name']
+    categories_collection.insert_one({'name': category_name})
+    flash('Category added successfully')
+    return redirect(url_for('approve_requests'))
+
+@app.route('/remove_category/<category_id>', methods=['POST'])
+def remove_category(category_id):
+    if 'username' not in session or session['role'] != 'superadmin':
+        return redirect(url_for('login'))
+    categories_collection.delete_one({'_id': ObjectId(category_id)})
+    flash('Category removed successfully')
+    return redirect(url_for('approve_requests'))
+
+@app.route('/remove_user/<user_id>', methods=['POST'])
+def remove_user(user_id):
+    if 'username' not in session or session['role'] != 'superadmin':
+        return redirect(url_for('login'))
+    users_collection.delete_one({'_id': ObjectId(user_id)})
+    flash('User removed successfully')
     return redirect(url_for('approve_requests'))
 
 @app.route('/report')
